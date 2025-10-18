@@ -18,7 +18,6 @@ return {
     },
 
     config = function()
-      -- 1) Build shared capabilities (blink.cmp augments completion)
       local capabilities = vim.lsp.protocol.make_client_capabilities()
       capabilities = require("blink.cmp").get_lsp_capabilities(capabilities)
 
@@ -29,7 +28,6 @@ return {
         return opts
       end
 
-      -- 2) LSP servers
       -- Lua
       vim.lsp.config("lua_ls", with_caps({
         settings = {
@@ -56,7 +54,42 @@ return {
       vim.lsp.config("clangd", with_caps({}))
       vim.lsp.enable("clangd")
 
-      -- 3) Format on save (unchanged)
+      -- TypeScript & JS language features
+      vim.lsp.config("vtsls", with_caps({
+        -- Let ESLint own formatting for TS/JS
+        settings = {
+          typescript = {
+            format = { enable = false },
+            preferences = { importModuleSpecifier = "non-relative" },
+            inlayHints = {
+              parameterNames = { enabled = "literals" },
+              parameterTypes = { enabled = true },
+              variableTypes = { enabled = true },
+              propertyDeclarationTypes = { enabled = true },
+              functionLikeReturnTypes = { enabled = true },
+            },
+          },
+          javascript = { format = { enable = false } },
+        },
+      }))
+      vim.lsp.enable("vtsls")
+
+      -- ESLint (diagnostics, code actions, and formatting)
+      vim.lsp.config("eslint", with_caps({
+        settings = {
+          eslint = {
+            -- try to auto-detect the project root (eslint config / package.json)
+            workingDirectory = { mode = "auto" },
+            format = { enable = true }, -- exposes textDocument/formatting
+            codeAction = {
+              disableRuleComment = { enable = true },
+              showDocumentation = { enable = true },
+            },
+            -- you can also set: nodePath, configFile, rulesCustomizations, etc.
+          },
+        },
+      }))
+      vim.lsp.enable("eslint")
       local grp = vim.api.nvim_create_augroup("my.lsp", { clear = true })
       vim.api.nvim_create_autocmd("LspAttach", {
         group = grp,

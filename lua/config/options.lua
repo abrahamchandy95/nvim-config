@@ -23,7 +23,11 @@ opt.backspace = "indent,eol,start"
 opt.splitright = true
 opt.splitbelow = true
 opt.clipboard = "unnamedplus"
-
+opt.textwidth = 78
+opt.colorcolumn = "+1"
+-- Make Neovim actually insert line breaks while typing to respect 'textwidth'
+-- If you only want comments to wrap, use "c" instead of "t".
+opt.formatoptions:append("t")
 if vim.fn.has("termguicolors") == 1 then
   opt.termguicolors = true
 end
