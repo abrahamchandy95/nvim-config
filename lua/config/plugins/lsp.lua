@@ -18,6 +18,7 @@ return {
     },
 
     config = function()
+      -- Capabilities for completion (blink.cmp)
       local capabilities = vim.lsp.protocol.make_client_capabilities()
       capabilities = require("blink.cmp").get_lsp_capabilities(capabilities)
 
@@ -78,32 +79,43 @@ return {
       vim.lsp.config("eslint", with_caps({
         settings = {
           eslint = {
-            -- try to auto-detect the project root (eslint config / package.json)
             workingDirectory = { mode = "auto" },
             format = { enable = true }, -- exposes textDocument/formatting
             codeAction = {
               disableRuleComment = { enable = true },
               showDocumentation = { enable = true },
             },
-            -- you can also set: nodePath, configFile, rulesCustomizations, etc.
           },
         },
       }))
       vim.lsp.enable("eslint")
+
+      -- ---------- On-attach formatting control ----------
       local grp = vim.api.nvim_create_augroup("my.lsp", { clear = true })
+
       vim.api.nvim_create_autocmd("LspAttach", {
         group = grp,
         callback = function(args)
           local client = vim.lsp.get_client_by_id(args.data.client_id)
           if not client then return end
-          if client:supports_method("textDocument/formatting") then
-            vim.api.nvim_create_autocmd("BufWritePre", {
-              group = grp,
-              buffer = args.buf,
-              callback = function()
-                vim.lsp.buf.format({ bufnr = args.buf, id = client.id, timeout_ms = 1000 })
-              end,
-            })
+          if client.name == "clangd" then
+            -- Belt & suspenders: disable formatting capability on this buffer
+            client.server_capabilities.documentFormattingProvider = false
+            client.server_capabilities.documentRangeFormattingProvider = false
+            return
+          end
+          if client.supports_method and client:supports_method("textDocument/formatting") then
+            if not vim.b[args.buf]._my_lsp_fmt then
+              vim.b[args.buf]._my_lsp_fmt = true
+              vim.api.nvim_create_autocmd("BufWritePre", {
+                group = grp,
+                buffer = args.buf,
+                callback = function()
+                  -- Format only with this client (no surprises with multiple servers)
+                  vim.lsp.buf.format({ bufnr = args.buf, id = client.id, timeout_ms = 1000 })
+                end,
+              })
+            end
           end
         end,
       })
