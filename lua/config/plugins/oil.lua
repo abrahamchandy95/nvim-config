@@ -24,7 +24,21 @@ return {
       -- (optional) if you ever disable default keymaps, keep this so you can toggle quickly
       -- keymaps = { ["g."] = "actions.toggle_hidden" },
     },
-    dependencies = { { "nvim-mini/mini.icons", opts = {} } },
+    dependencies = {
+      {
+        "nvim-mini/mini.icons",
+        -- Give mini.icons the .gsql override
+        config = function(_, opts)
+          require("mini.icons").setup(vim.tbl_deep_extend("force", opts or {}, {
+            extension = {
+              gsql = { glyph = "", hl = "MiniIconsOrange" }, -- FA sitemap, TigerGraph orange
+            },
+          }))
+          -- Optional: make devicons-based plugins use mini.icons everywhere
+          -- MiniIcons.mock_nvim_web_devicons()
+        end,
+      },
+    },
     lazy = false,
   },
 }
