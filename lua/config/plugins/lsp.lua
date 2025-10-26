@@ -18,6 +18,7 @@ return {
     },
 
     config = function()
+      local util = require("lspconfig.util")
       -- Capabilities for completion (blink.cmp)
       local capabilities = vim.lsp.protocol.make_client_capabilities()
       capabilities = require("blink.cmp").get_lsp_capabilities(capabilities)
@@ -52,7 +53,20 @@ return {
       vim.lsp.enable("ruff_lsp")
 
       -- C/C++
-      vim.lsp.config("clangd", with_caps({}))
+
+      vim.lsp.config("clangd", with_caps({
+        -- pick a sensible project root
+        root_dir = util.root_pattern("compile_commands.json", "Makefile", ".git"),
+
+        -- inject fallback flags per project root
+        on_new_config = function(new_config, new_root_dir)
+          new_config.init_options = new_config.init_options or {}
+          new_config.init_options.fallbackFlags = {
+            "-std=c11",
+            "-I" .. new_root_dir .. "/include",
+          }
+        end,
+      }))
       vim.lsp.enable("clangd")
 
       -- TypeScript & JS language features

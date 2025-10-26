@@ -4,7 +4,7 @@ return {
     ---@module 'oil'
     ---@type oil.SetupOpts
     opts = {
-      -- (optional) keep the default keymaps, which already include `g.` to toggle hidden
+      -- keep Oil’s default keymaps (includes `-` parent and `g.` toggle hidden)
       use_default_keymaps = true,
 
       -- show dotfiles & don't permanently hide anything
@@ -20,10 +20,14 @@ return {
           return false
         end,
       },
-
-      -- (optional) if you ever disable default keymaps, keep this so you can toggle quickly
-      -- keymaps = { ["g."] = "actions.toggle_hidden" },
     },
+
+    -- Put your keymaps here so they’re tied to this plugin
+    keys = {
+      -- Open Oil in the current directory
+      { "<leader>ee", "<CMD>Oil<CR>", desc = "Open Oil (file explorer)" },
+    },
+
     dependencies = {
       {
         "nvim-mini/mini.icons",
@@ -39,6 +43,8 @@ return {
         end,
       },
     },
+
+    -- Oil’s README recommends not lazy-loading to avoid edge cases
     lazy = false,
   },
 }
