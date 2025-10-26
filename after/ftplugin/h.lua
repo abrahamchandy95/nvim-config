@@ -1,7 +1,6 @@
 vim.bo.textwidth = 78
 vim.wo.colorcolumn = "79"
 
--- --------- Helpers ---------
 local function get_col_limit()
   return (vim.bo.textwidth and vim.bo.textwidth > 0) and vim.bo.textwidth or 78
 end
@@ -12,7 +11,6 @@ local function clangfmt_align_style()
     local major = tonumber(v:match("version%s+(%d+)"))
     if major and major >= 16 then return "BlockIndent" end
   end
-  -- For older clang-format versions, fall back to a not-under-parenthesis alignment
   return "DontAlign"
 end
 
@@ -31,45 +29,32 @@ local STYLE = string.format(
   clangfmt_align_style()
 )
 
--- Return a list of {start_line, end_line} (1-based, inclusive) ranges
--- containing Treesitter (parameter_list|argument_list) nodes that either
--- exceed the ColumnLimit on one line or already span multiple lines.
 local function param_ranges_c(bufnr)
   local ok_ts, ts = pcall(require, "vim.treesitter")
   if not ok_ts then return {} end
-
   local parser = ts.get_parser(bufnr, "c")
   if not parser then return {} end
 
-  local trees = parser:parse()
-  if not trees or not trees[1] then return {} end
-  local root = trees[1]:root()
+  local tree = parser:parse()[1]
+  if not tree then return {} end
+  local root = tree:root()
 
-  local ok_q, query = pcall(ts.query.parse, "c", [[
+  local ok_q, q = pcall(ts.query.parse, "c", [[
     (parameter_list) @plist
     (argument_list)  @alist
   ]])
-  if not ok_q or not query then return {} end
+  if not ok_q or not q then return {} end
 
-  local COL = get_col_limit()
-  local ranges = {}
-
-  for _, node in query:iter_captures(root, bufnr, 0, -1) do
-    local sr, sc, er, ec = node:range() -- 0-based rows/cols; end col is exclusive
+  local COL, ranges = get_col_limit(), {}
+  for _, node in q:iter_captures(root, bufnr, 0, -1) do
+    local sr, sc, er, ec = node:range()
     if sr == er then
-      -- Single-line list: only range-format if the list width exceeds column limit
-      if (ec - sc) > COL then
-        table.insert(ranges, { sr + 1, er + 1 })
-      end
+      if (ec - sc) > COL then table.insert(ranges, { sr + 1, er + 1 }) end
     else
-      -- Multi-line list: reformat the whole list to enforce style
       table.insert(ranges, { sr + 1, er + 1 })
     end
   end
 
-  if #ranges == 0 then return ranges end
-
-  -- Sort & merge overlaps/adjacent to minimize clang-format invocations
   table.sort(ranges, function(a, b) return a[1] < b[1] end)
   local merged = {}
   for _, r in ipairs(ranges) do
@@ -82,24 +67,18 @@ local function param_ranges_c(bufnr)
   return merged
 end
 
--- --------- Autocmd: format on save (only param/arg lists) ---------
-local grp = vim.api.nvim_create_augroup("c.param.wrap", { clear = true })
-
+local grp = vim.api.nvim_create_augroup("h.param.wrap", { clear = true })
 vim.api.nvim_create_autocmd("BufWritePre", {
   group = grp,
-  buffer = 0, -- only this buffer
+  buffer = 0,
   callback = function()
     if vim.fn.executable("clang-format") ~= 1 then return end
-
     local ranges = param_ranges_c(0)
     if #ranges == 0 then return end
-
-    -- Build a single clang-format command with multiple -lines
     local cmd = "silent keepjumps %!clang-format --style=" .. vim.fn.shellescape(STYLE)
     for _, r in ipairs(ranges) do
       cmd = cmd .. string.format(" -lines=%d:%d", r[1], r[2])
     end
-
     vim.cmd(cmd)
   end,
 })
