@@ -1,84 +1,74 @@
+-- after/ftplugin/cpp.lua
+
+-- ===== Buffer-local editor settings (what =G uses) =====
+vim.bo.expandtab = true
+vim.bo.shiftwidth = 4
+vim.bo.tabstop = 4
+vim.bo.softtabstop = 4
 vim.bo.textwidth = 78
 vim.wo.colorcolumn = "79"
 
+-- ===== Helpers =====
+local function cf_major()
+  local v = vim.fn.systemlist("clang-format --version")[1] or ""
+  return tonumber(v:match("version%s+(%d+)")) or 0
+end
+
 local function get_col_limit()
-  return (vim.bo.textwidth and vim.bo.textwidth > 0) and vim.bo.textwidth or 78
+  return (vim.bo.textwidth and vim.bo.textwidth > 0) and vim.bo.textwidth
+    or 78
 end
 
-local function clangfmt_align_style()
-  if vim.fn.executable("clang-format") == 1 then
-    local v = vim.fn.systemlist("clang-format --version")[1] or ""
-    local major = tonumber(v:match("version%s+(%d+)"))
-    if major and major >= 16 then return "BlockIndent" end
-  end
-  return "DontAlign"
+local function align_after_open_bracket()
+  -- BlockIndent (clang-format ≥16) puts the closing ')' on its own line.
+  -- Fall back to AlwaysBreak on older versions.
+  return (cf_major() >= 16) and "BlockIndent" or "AlwaysBreak"
 end
 
-local STYLE = string.format(
-  "{BasedOnStyle: LLVM, "
-  .. "ColumnLimit: %d, "
-  .. "ContinuationIndentWidth: 4, "
-  .. "AlignAfterOpenBracket: %s, "
-  .. "BinPackArguments: false, "
-  .. "BinPackParameters: false, "
-  .. "AllowAllArgumentsOnNextLine: false, "
-  .. "AllowAllParametersOfDeclarationOnNextLine: false, "
-  .. "PenaltyBreakBeforeFirstCallParameter: 0, "
-  .. "BreakBeforeBraces: Attach}",
-  get_col_limit(),
-  clangfmt_align_style()
-)
-
-local function param_ranges_cpp(bufnr)
-  local ok_ts, ts = pcall(require, "vim.treesitter")
-  if not ok_ts then return {} end
-  local parser = ts.get_parser(bufnr, "cpp")
-  if not parser then return {} end
-
-  local tree = parser:parse()[1]
-  if not tree then return {} end
-  local root = tree:root()
-
-  local ok_q, q = pcall(ts.query.parse, "cpp", [[
-    (parameter_list) @plist
-    (argument_list)  @alist
-  ]])
-  if not ok_q or not q then return {} end
-
-  local COL, ranges = get_col_limit(), {}
-  for _, node in q:iter_captures(root, bufnr, 0, -1) do
-    local sr, sc, er, ec = node:range()
-    if sr == er then
-      if (ec - sc) > COL then table.insert(ranges, { sr + 1, er + 1 }) end
-    else
-      table.insert(ranges, { sr + 1, er + 1 })
-    end
-  end
-
-  table.sort(ranges, function(a, b) return a[1] < b[1] end)
-  local merged = {}
-  for _, r in ipairs(ranges) do
-    if #merged == 0 or r[1] > merged[#merged][2] + 1 then
-      table.insert(merged, { r[1], r[2] })
-    else
-      if r[2] > merged[#merged][2] then merged[#merged][2] = r[2] end
-    end
-  end
-  return merged
+local function build_style()
+  -- Only widely-supported options to avoid version errors.
+  return string.format(
+    "{BasedOnStyle: LLVM, "
+      .. "IndentWidth: 4, TabWidth: 4, UseTab: Never, "
+      .. "ColumnLimit: %d, ContinuationIndentWidth: 4, "
+      .. "AlignAfterOpenBracket: %s, "
+      .. "BinPackArguments: false, BinPackParameters: false, "
+      .. "AllowAllArgumentsOnNextLine: true, "
+      .. "AllowAllParametersOfDeclarationOnNextLine: true, "
+      .. "IndentWrappedFunctionNames: true, "
+      .. "ConstructorInitializerAllOnOneLineOrOnePerLine: true, "
+      .. "BreakConstructorInitializers: BeforeColon, "
+      .. "ConstructorInitializerIndentWidth: 4, "
+      .. "PenaltyBreakBeforeFirstCallParameter: 0, "
+      .. "BreakBeforeBraces: Attach}",
+    get_col_limit(),
+    align_after_open_bracket()
+  )
 end
 
-local grp = vim.api.nvim_create_augroup("cpp.param.wrap", { clear = true })
+-- ===== Format-on-save with clang-format (full buffer) =====
+local grp = vim.api.nvim_create_augroup("cpp.clangformat", { clear = true })
 vim.api.nvim_create_autocmd("BufWritePre", {
   group = grp,
   buffer = 0,
   callback = function()
-    if vim.fn.executable("clang-format") ~= 1 then return end
-    local ranges = param_ranges_cpp(0)
-    if #ranges == 0 then return end
-    local cmd = "silent keepjumps %!clang-format --style=" .. vim.fn.shellescape(STYLE)
-    for _, r in ipairs(ranges) do
-      cmd = cmd .. string.format(" -lines=%d:%d", r[1], r[2])
+    if vim.fn.executable("clang-format") ~= 1 then
+      return
     end
-    vim.cmd(cmd)
+    local STYLE = build_style()
+    vim.cmd(
+      "silent keepjumps %!clang-format --style=" .. vim.fn.shellescape(STYLE)
+    )
   end,
 })
+
+-- Optional: manual command you can call any time
+vim.api.nvim_buf_create_user_command(0, "CxxFormat", function()
+  if vim.fn.executable("clang-format") ~= 1 then
+    return
+  end
+  local STYLE = build_style()
+  vim.cmd(
+    "silent keepjumps %!clang-format --style=" .. vim.fn.shellescape(STYLE)
+  )
+end, {})

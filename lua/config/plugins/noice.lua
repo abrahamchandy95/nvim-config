@@ -1,18 +1,29 @@
 return {
-  -- lazy.nvim
   {
     "folke/noice.nvim",
     event = "VeryLazy",
     opts = {
-      -- add any options here
+      --    (built-in in noice)
+      presets = {
+        long_message_to_split = true, -- long messages → split
+      },
+
+      --    (this overrides the built-in "split" view)
+      views = {
+        split = { enter = true },
+      },
+
+      --    to open in a split (covers very verbose outputs)
+      routes = {
+        {
+          view = "split",
+          filter = { event = "msg_show", min_height = 15 },
+        },
+      },
     },
     dependencies = {
-      -- if you lazy-load any plugin below, make sure to add proper `module="..."` entries
       "MunifTanjim/nui.nvim",
-      -- OPTIONAL:
-      --   `nvim-notify` is only needed, if you want to use the notification view.
-      --   If not available, we use `mini` as the fallback
-      "rcarriga/nvim-notify",
-    }
-  }
+      "rcarriga/nvim-notify", -- optional but recommended for notifications
+    },
+  },
 }
