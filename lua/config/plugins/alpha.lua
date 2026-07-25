@@ -44,20 +44,20 @@ return {
 
     -- Two button sets
     local buttons_full = {
-      { "e", "  > New File", "<cmd>ene<CR>" },
-      { "SPC ee", "  > Open Oil (cwd)", "<cmd>Oil<CR>" },
+      { "e", "  > New File", "<cmd>ene<CR>" },
+      { "SPC ee", "  > Open Oil (cwd)", "<cmd>Oil<CR>" },
       { "SPC ff", "󰱼  > Find File", "<cmd>Telescope find_files<CR>" },
-      { "SPC fs", "  > Find Word", "<cmd>Telescope live_grep<CR>" },
+      { "SPC fs", "  > Find Word", "<cmd>Telescope live_grep<CR>" },
       { "SPC wr", "󰁯  > Restore Session For Current Directory", "<cmd>SessionRestore<CR>" },
-      { "q", "  > Quit NVIM", "<cmd>qa<CR>" },
+      { "q", "  > Quit NVIM", "<cmd>qa<CR>" },
     }
     local buttons_compact = {
-      { "e", "  New", "<cmd>ene<CR>" },
-      { "SPC ee", "  Oil", "<cmd>Oil<CR>" },
+      { "e", "  New", "<cmd>ene<CR>" },
+      { "SPC ee", "  Oil", "<cmd>Oil<CR>" },
       { "SPC ff", "󰱼  Files", "<cmd>Telescope find_files<CR>" },
-      { "SPC fs", "  Grep", "<cmd>Telescope live_grep<CR>" },
+      { "SPC fs", "  Grep", "<cmd>Telescope live_grep<CR>" },
       { "SPC wr", "󰁯  Session", "<cmd>SessionRestore<CR>" },
-      { "q", "  Quit", "<cmd>qa<CR>" },
+      { "q", "  Quit", "<cmd>qa<CR>" },
     }
 
     -- Helper: build dashboard buttons from tuples
@@ -85,11 +85,15 @@ return {
       return keep
     end
 
-    -- Fit everything to current window height
-    local function fit_layout()
-      local lines = vim.o.lines -- total screen rows
-      local reserve = 0         -- rows we can't use (we hide UI, so 0)
-      local avail = math.max(1, lines - reserve)
+    -- Fit everything to the given number of rows. When no dashboard
+    -- window exists yet (initial setup runs before alpha draws), the
+    -- caller omits `avail` and we estimate: total screen rows minus
+    -- cmdline, statusline, and tabline. Once the dashboard is open we
+    -- re-fit with the window's real height, which is what matters —
+    -- assuming the full screen here is what pushed the header off the
+    -- top of short terminals.
+    local function fit_layout(avail)
+      avail = math.max(1, avail or (vim.o.lines - vim.o.cmdheight - 2))
 
       -- start with roomy padding & full buttons
       local top_pad, mid_pad, bot_pad = 2, 1, 1
@@ -160,45 +164,73 @@ return {
     -- Initial setup
     fit_layout()
     dashboard.opts.opts.noautocmd = true
-    require("alpha").setup(dashboard.opts)
+    alpha.setup(dashboard.opts)
 
     -- === Alpha-only view tweaks to maximize space and avoid “middle start” ===
     local aug = vim.api.nvim_create_augroup("AlphaFit", { clear = true })
 
-    vim.api.nvim_create_autocmd("FileType", {
+    -- Saved UI options live in a plain local, NOT vim.w: window-scoped
+    -- vars were saved on the alpha window but restored from whatever
+    -- window was current at BufUnload, so the restore silently failed.
+    local saved
+
+    local function hide_chrome()
+      if not saved then
+        saved = {
+          laststatus = vim.o.laststatus,
+          showtabline = vim.o.showtabline,
+          cmdheight = vim.o.cmdheight,
+        }
+      end
+      -- reclaim rows
+      vim.o.laststatus = 0
+      vim.o.showtabline = 0
+      pcall(function() vim.o.cmdheight = 0 end) -- works on NVIM 0.9+
+    end
+
+    local function restore_chrome()
+      if not saved then return end
+      vim.o.laststatus = saved.laststatus
+      vim.o.showtabline = saved.showtabline
+      pcall(function() vim.o.cmdheight = saved.cmdheight end)
+      saved = nil
+    end
+
+    local function refit()
+      fit_layout(vim.api.nvim_win_get_height(0))
+      alpha.setup(dashboard.opts)
+      pcall(alpha.redraw)
+      -- ensure we see the top
+      vim.schedule(function()
+        pcall(vim.cmd, "normal! gg0")
+      end)
+    end
+
+    -- `noautocmd = true` above means `FileType alpha` never fires;
+    -- AlphaReady is the User event alpha emits for exactly this case.
+    vim.api.nvim_create_autocmd("User", {
       group = aug,
-      pattern = "alpha",
+      pattern = "AlphaReady",
       callback = function()
-        -- save globals to restore later
-        vim.w._alpha_prev_laststatus  = vim.o.laststatus
-        vim.w._alpha_prev_showtabline = vim.o.showtabline
-        vim.w._alpha_prev_cmdheight   = vim.o.cmdheight
+        hide_chrome()
 
-        -- reclaim rows
-        vim.opt.laststatus            = 0
-        vim.opt.showtabline           = 0
-        pcall(function() vim.opt.cmdheight = 0 end) -- works on NVIM 0.9+
-
-        -- no centering
+        -- no centering, no folds
         vim.opt_local.scrolloff = 0
         vim.opt_local.sidescrolloff = 0
+        vim.opt_local.foldenable = false
 
-        -- ensure we see the top
-        vim.schedule(function()
-          pcall(vim.cmd, "normal! gg0")
-        end)
+        -- re-fit now that the dashboard window's real height is known
+        refit()
       end,
     })
 
-    -- Restore globals when leaving Alpha
+    -- Restore UI rows when leaving Alpha
     vim.api.nvim_create_autocmd("BufUnload", {
       group = aug,
       pattern = "*",
       callback = function(args)
         if vim.bo[args.buf].filetype == "alpha" then
-          if vim.w._alpha_prev_laststatus ~= nil then vim.opt.laststatus = vim.w._alpha_prev_laststatus end
-          if vim.w._alpha_prev_showtabline ~= nil then vim.opt.showtabline = vim.w._alpha_prev_showtabline end
-          if vim.w._alpha_prev_cmdheight ~= nil then pcall(function() vim.opt.cmdheight = vim.w._alpha_prev_cmdheight end) end
+          restore_chrome()
         end
       end,
     })
@@ -208,17 +240,9 @@ return {
       group = aug,
       callback = function()
         if vim.bo.filetype == "alpha" then
-          fit_layout()
-          -- re-setup to apply new layout
-          require("alpha").setup(dashboard.opts)
-          vim.schedule(function()
-            pcall(vim.cmd, "normal! gg0")
-          end)
+          refit()
         end
       end,
     })
-
-    -- Keep folds off
-    vim.cmd([[autocmd FileType alpha setlocal nofoldenable]])
   end,
 }
