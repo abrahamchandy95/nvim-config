@@ -7,28 +7,20 @@ if not (vim.bo.textwidth and vim.bo.textwidth > 0) then
 end
 vim.wo.colorcolumn = tostring(vim.bo.textwidth + 1)
 
--- prevent your global LSP-on-save formatter for this buffer
--- (your global config checks/sets b:_my_lsp_fmt; set it now)
-vim.b._my_lsp_fmt = true
-
--- also disable lua_ls formatting capability (belt + suspenders)
-local grp = vim.api.nvim_create_augroup("lua.stylua", { clear = true })
-vim.api.nvim_create_autocmd("LspAttach", {
-  group = grp,
-  buffer = 0,
-  callback = function(args)
-    local client = vim.lsp.get_client_by_id(args.data.client_id)
-    if client and client.name == "lua_ls" then
-      client.server_capabilities.documentFormattingProvider = false
-      client.server_capabilities.documentRangeFormattingProvider = false
-    end
-  end,
-})
+-- Stylua owns formatting for Lua buffers: this guard stops the global
+-- LSP format-on-save autocmd (lua/config/plugins/lsp.lua) from
+-- registering for this buffer.
+vim.b.lsp_format_on_save = true
 
 -- format with stylua on save (whole file)
+local bufnr = vim.api.nvim_get_current_buf()
+-- augroup is unique per buffer so re-sourcing this ftplugin for a new
+-- buffer doesn't clear the autocmds of previously opened Lua buffers
+local grp =
+  vim.api.nvim_create_augroup("lua.stylua." .. bufnr, { clear = true })
 vim.api.nvim_create_autocmd("BufWritePre", {
   group = grp,
-  buffer = 0,
+  buffer = bufnr,
   callback = function()
     if vim.fn.executable("stylua") ~= 1 then return end
 

@@ -28,6 +28,9 @@ opt.colorcolumn = "+1"
 -- Make Neovim actually insert line breaks while typing to respect 'textwidth'
 -- If you only want comments to wrap, use "c" instead of "t".
 opt.formatoptions:append("t")
+-- Recommended by auto-session so sessions capture everything reliably
+opt.sessionoptions =
+  "blank,buffers,curdir,folds,help,tabpages,winsize,winpos,terminal,localoptions"
 if vim.fn.has("termguicolors") == 1 then
   opt.termguicolors = true
 end

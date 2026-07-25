@@ -12,7 +12,7 @@ local live_multigrep = function(opts)
   local finder = finders.new_async_job {
     command_generator = function(prompt)
       if not prompt or prompt == "" then
-        return nul
+        return nil
       end
 
       local pieces = vim.split(prompt, "  ")
